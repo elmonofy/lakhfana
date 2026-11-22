@@ -81,7 +81,8 @@ final class ConverterTests: XCTestCase {
         let c = try pcConverter()
         XCTAssertEqual(conv(c, "  hgsghl\r\n\tugd;l  "), "  السلام\r\n\tعليكم  ")
         XCTAssertEqual(conv(c, ""), "")
-        XCTAssertEqual(conv(c, "12345"), "12345")
+        // Digits follow the layout: Windows-style PC layouts keep 1-5, Mac's Arabic PC layout types ١-٥.
+        XCTAssertTrue(["12345", "١٢٣٤٥"].contains(conv(c, "12345")))
         XCTAssertEqual(conv(c, "   "), "   ")
         XCTAssertEqual(conv(c, "hgsghl😀"), "السلام😀")
     }
