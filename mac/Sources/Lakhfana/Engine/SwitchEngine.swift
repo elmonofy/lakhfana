@@ -19,8 +19,14 @@ final class SwitchEngine {
     private var lastConverted: String?
     private var lastOriginalID: String?
 
-    private static let copyTimeout: TimeInterval = 0.4
-    private static let pasteSettle: TimeInterval = 0.35
+    /// Slow apps (Docs, Notion, Electron under load) can take a while to write the copy.
+    private static let copyTimeout: TimeInterval = 0.7
+    /// Upper bound while waiting for the target to consume ⌘V before the clipboard is restored.
+    private static let pasteMaxWait: TimeInterval = 1.2
+    /// Used when the app doesn't report its caret, so we can't see the paste land.
+    private static let pasteBlindWait: TimeInterval = 0.8
+
+    private static let msgSelectFirst = "حدد الكلام الأول وبعدين دوس الاختصار."
 
     private init() {}
 
@@ -34,10 +40,6 @@ final class SwitchEngine {
         if !Permissions.isTrusted {
             say("لخفنه محتاج صلاحية Accessibility عشان يقدر ينسخ ويلزق. فعّلها من الإعدادات وجرّب تاني.")
             Permissions.promptIfNeeded()
-            return
-        }
-        if IsSecureEventInputEnabled() {
-            say("مش هينفع هنا: الخانة دي محمية (زي خانة الباسورد).")
             return
         }
         guard let conv = currentConverter() else {
@@ -107,10 +109,33 @@ final class SwitchEngine {
         }
     }
 
+    /// After ⌘V: wait until the caret moves (the paste landed), or a fixed time when the app doesn't report it.
+    private func waitForPaste(_ focus: FocusedElement, rangeBefore: CFRange?) {
+        guard let before = rangeBefore else {
+            usleep(UInt32(SwitchEngine.pasteBlindWait * 1_000_000))
+            return
+        }
+        usleep(60_000)
+        let deadline = Date().addingTimeInterval(SwitchEngine.pasteMaxWait)
+        while Date() < deadline {
+            if let now = focus.selectedRange(), now.location != before.location || now.length != before.length {
+                usleep(120_000)   // let the app finish reading every pasteboard type
+                return
+            }
+            usleep(30_000)
+        }
+    }
+
     private func run(_ conv: Converter, front: NSRunningApplication?, sourceID: String?,
                      selectLine: Bool, switchAfter: Bool) {
         if !KeySender.waitForModifiersReleased(timeout: 1.5) {
             say("سيب الزراير وجرّب تاني.")
+            return
+        }
+
+        let focus = FocusedElement.current(in: front)
+        if focus.kind == .secureText {
+            say("مش هينفع هنا: الخانة دي محمية (زي خانة الباسورد).")
             return
         }
 
@@ -122,12 +147,17 @@ final class SwitchEngine {
 
         var text = copySelection()
         if text == nil && selectLine {
-            KeySender.selectCurrentLine()
-            usleep(40_000)
-            text = copySelection()
+            // ⌘← means "Back" in browsers and switches tabs in terminals: only use it on real text.
+            let safe = focus.kind == .editableText
+                || (focus.kind == .unknown && !FocusedElement.isRiskyForLineSelect(front))
+            if safe {
+                KeySender.selectCurrentLine()
+                usleep(40_000)
+                text = copySelection()
+            }
         }
         guard let original = text else {
-            if !selectLine { say("حدد الكلام الأول وبعدين دوس الاختصار.") }
+            say(SwitchEngine.msgSelectFirst)
             return
         }
 
@@ -153,8 +183,16 @@ final class SwitchEngine {
         let stillFront = onMain { NSWorkspace.shared.frontmostApplication?.processIdentifier == front?.processIdentifier }
         if !stillFront { return }
 
+        let rangeBefore = focus.selectedRange()
         KeySender.paste()
-        usleep(UInt32(SwitchEngine.pasteSettle * 1_000_000))
+
+        // Switch the keyboard right away so the user can keep typing in the right language.
+        if switchAfter {
+            usleep(50_000)
+            onMain { InputSources.select(result.targetID) }
+        }
+
+        waitForPaste(focus, rangeBefore: rangeBefore)
 
         onMain {
             if PasteboardHelper.changeCount == ours {
@@ -163,7 +201,6 @@ final class SwitchEngine {
             self.lastOriginal = original
             self.lastConverted = result.text
             self.lastOriginalID = result.targetID == conv.idA ? conv.idB : conv.idA
-            if switchAfter { InputSources.select(result.targetID) }
         }
         restored = true
     }

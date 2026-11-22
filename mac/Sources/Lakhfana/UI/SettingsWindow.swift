@@ -10,12 +10,18 @@ struct SettingsView: View {
     let onSave: () -> Void
     let onCancel: () -> Void
     let onQuit: () -> Void
+    /// nil: everything fits on screen. Otherwise the middle scrolls at this height (see WindowFactory.setContent).
+    var scrollHeight: CGFloat? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.sectionSpacing) {
             header
-            PreferencesView(model: model)
-            AccessibilityCard(watcher: permission, isOnboarding: false)
+            ScrollableMiddle(height: scrollHeight) {
+                VStack(alignment: .leading, spacing: Theme.sectionSpacing) {
+                    PreferencesView(model: model)
+                    AccessibilityCard(watcher: permission, isOnboarding: false)
+                }
+            }
             footer
         }
         .padding(Theme.windowPadding)
@@ -94,33 +100,60 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             return
         }
         let m = PreferencesModel(settings: AppSettings.shared)
+        m.loadLoginItemState()
         model = m
-        let root = SettingsView(model: m,
-                                permission: permission,
-                                icon: WindowFactory.appIcon,
-                                version: WindowFactory.appVersion,
-                                onSave: { [weak self] in self?.save() },
-                                onCancel: { [weak self] in self?.window?.close() },
-                                onQuit: { NSApp.terminate(nil) })
+        let watcher = permission
+        let icon = WindowFactory.appIcon
+        let version = WindowFactory.appVersion
         let w = window ?? WindowFactory.makeWindow(title: "إعدادات لخفنه")
         w.delegate = self
         window = w
-        WindowFactory.setContent(root, of: w)
+        WindowFactory.setContent(of: w) { (scrollHeight: CGFloat?) -> SettingsView in
+            return SettingsView(model: m,
+                                permission: watcher,
+                                icon: icon,
+                                version: version,
+                                onSave: { [weak self] in self?.save() },
+                                onCancel: { [weak self] in self?.window?.close() },
+                                onQuit: { NSApp.terminate(nil) },
+                                scrollHeight: scrollHeight)
+        }
         permission.start()
         WindowFactory.present(w)
     }
 
+    /// Writes the draft, then applies it right away: hotkey (re)registration and launch at login, even when the
+    /// values did not change (e.g. the shortcut was taken at launch, or the login item was removed meanwhile).
+    /// Stays open when something needs the user's attention.
     private func save() {
         guard let m = model else { return }
         guard m.validate() else { return }
         m.write(to: AppSettings.shared)
-        window?.close()
+
+        var keepOpen = false
+        if !HotkeyRefresh.applySaved() {
+            m.recorder.refreshStatus()
+            m.formError = HotkeyRecorderModel.takenMessage + "، اختار غيره"
+            keepOpen = true
+        }
+
+        let hadHint = m.loginItemHint != nil
+        let hint = LoginItem.setEnabled(m.launchAtLogin)
+        m.loginItemHint = hint
+        if hint != nil && !hadHint {
+            keepOpen = true
+        }
+
+        if !keepOpen {
+            window?.close()
+        }
     }
 
     // MARK: NSWindowDelegate
 
     func windowDidBecomeKey(_ notification: Notification) {
         model?.refreshLayouts()
+        model?.refreshLoginItemHint()
         permission.refresh()
     }
 

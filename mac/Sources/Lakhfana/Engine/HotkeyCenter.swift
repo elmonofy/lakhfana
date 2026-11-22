@@ -122,6 +122,22 @@ final class HotkeyCenter {
         if m == ctrl | cmd && k == kVK_Space { return true }         // emoji & symbols
         if m == ctrl | cmd && k == kVK_ANSI_Q { return true }        // lock screen
         if m & cmd != 0 && k == kVK_Space && m & opt != 0 { return true }   // Finder search
+        return isSystemShortcut(hk)
+    }
+
+    /// Enabled macOS system shortcuts (Mission Control, Spaces, screenshots, input sources, the user's own
+    /// customisations…). They win over Carbon hotkeys, so ours would never fire.
+    static func isSystemShortcut(_ hk: Hotkey) -> Bool {
+        var unmanaged: Unmanaged<CFArray>?
+        guard CopySymbolicHotKeys(&unmanaged) == noErr, let cf = unmanaged?.takeRetainedValue() else { return false }
+        let entries = (cf as NSArray).compactMap { $0 as? NSDictionary }
+        for entry in entries {
+            let enabled = (entry["kHISymbolicHotKeyEnabled"] as? NSNumber)?.boolValue ?? false
+            guard enabled,
+                  let code = (entry["kHISymbolicHotKeyCode"] as? NSNumber)?.uint32Value,
+                  let mods = (entry["kHISymbolicHotKeyModifiers"] as? NSNumber)?.uint32Value else { continue }
+            if code == hk.keyCode && (mods & Hotkey.carbonModifierMask) == hk.modifiers { return true }
+        }
         return false
     }
 }

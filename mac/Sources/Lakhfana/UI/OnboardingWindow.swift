@@ -8,12 +8,18 @@ struct OnboardingView: View {
     let icon: NSImage
     let onStart: () -> Void
     let onLater: () -> Void
+    /// nil: everything fits on screen. Otherwise the middle scrolls at this height (see WindowFactory.setContent).
+    var scrollHeight: CGFloat? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.sectionSpacing) {
             header
-            PreferencesView(model: model)
-            AccessibilityCard(watcher: permission, isOnboarding: true)
+            ScrollableMiddle(height: scrollHeight) {
+                VStack(alignment: .leading, spacing: Theme.sectionSpacing) {
+                    PreferencesView(model: model)
+                    AccessibilityCard(watcher: permission, isOnboarding: true)
+                }
+            }
             footer
         }
         .padding(Theme.windowPadding)
@@ -78,12 +84,15 @@ struct OnboardingView: View {
 
 @MainActor
 final class OnboardingWindowController: NSObject, NSWindowDelegate {
-    /// Called after "يلا نبدأ" / "بعدين" saved the settings (firstRunDone = true). Bool = Accessibility granted.
+    /// Called once first run is finished (firstRunDone = true): after "يلا نبدأ", "بعدين" or the close button.
+    /// Bool = Accessibility granted.
     var onFinished: ((Bool) -> Void)?
 
     private var window: NSWindow?
     private var model: PreferencesModel?
     private let permission: PermissionWatcher
+    /// True once this window's draft was saved; guards the close-button path against running twice.
+    private var finished = false
 
     override init() {
         permission = PermissionWatcher()
@@ -103,28 +112,56 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         }
         let m = PreferencesModel(settings: AppSettings.shared)
         model = m
-        let root = OnboardingView(model: m,
-                                  permission: permission,
-                                  icon: WindowFactory.appIcon,
-                                  onStart: { [weak self] in self?.finish() },
-                                  onLater: { [weak self] in self?.finish() })
+        finished = false
+        let watcher = permission
+        let icon = WindowFactory.appIcon
         let w = window ?? WindowFactory.makeWindow(title: "لخفنه")
         w.delegate = self
         window = w
-        WindowFactory.setContent(root, of: w)
+        WindowFactory.setContent(of: w) { (scrollHeight: CGFloat?) -> OnboardingView in
+            return OnboardingView(model: m,
+                                  permission: watcher,
+                                  icon: icon,
+                                  onStart: { [weak self] in self?.start() },
+                                  onLater: { [weak self] in self?.later() },
+                                  scrollHeight: scrollHeight)
+        }
         permission.start()
         WindowFactory.present(w)
     }
 
-    private func finish() {
-        guard let m = model else { return }
+    /// "يلا نبدأ": full validation; stays open with inline errors until everything is right.
+    private func start() {
+        guard let m = model, !finished else { return }
         guard m.validate() else { return }
-        let settings = AppSettings.shared
-        m.write(to: settings)
-        settings.firstRunDone = true
+        m.write(to: AppSettings.shared)
+        complete(closeWindow: true)
+    }
+
+    /// "بعدين": never blocks. Saves what validates, skips the rest.
+    private func later() {
+        guard let m = model, !finished else { return }
+        m.writeValidParts(to: AppSettings.shared)
+        complete(closeWindow: true)
+    }
+
+    /// Common end of first run: firstRunDone, hotkey re-registration, close, then onFinished (launch at login…).
+    private func complete(closeWindow: Bool) {
+        finished = true
+        AppSettings.shared.firstRunDone = true
+        HotkeyRefresh.applySaved()
         let trusted = Permissions.isTrusted
-        window?.close()
+        if closeWindow {
+            window?.close()
+        }
         onFinished?(trusted)
+    }
+
+    /// The red close button behaves like "بعدين".
+    private func finishFromClose() {
+        guard let m = model, !finished else { return }
+        m.writeValidParts(to: AppSettings.shared)
+        complete(closeWindow: false)
     }
 
     // MARK: NSWindowDelegate
@@ -138,8 +175,15 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         model?.stopRecording()
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        finishFromClose()
+        return true
+    }
+
     func windowWillClose(_ notification: Notification) {
         model?.stopRecording()
         permission.stop()
+        // Also covers close() calls that skip windowShouldClose.
+        finishFromClose()
     }
 }

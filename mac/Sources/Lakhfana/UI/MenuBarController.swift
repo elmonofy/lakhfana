@@ -49,7 +49,7 @@ final class MenuBarController: NSObject {
         } else if hotkey.isEmpty {
             button.toolTip = "لخفنه"
         } else {
-            button.toolTip = "لخفنه — " + hotkey.displayString
+            button.toolTip = "لخفنه — " + hotkey.isolatedDisplayString
         }
     }
 

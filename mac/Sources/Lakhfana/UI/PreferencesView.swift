@@ -29,6 +29,8 @@ final class PreferencesModel: ObservableObject {
     @Published var layoutError: String? = nil
     @Published var formError: String? = nil
     @Published var launchAtLogin: Bool = true
+    /// Shown under the launch-at-login toggle when macOS refused it or waits for approval.
+    @Published var loginItemHint: String? = nil
     @Published var switchLayoutAfter: Bool = true
     @Published var selectLineIfEmpty: Bool = true
 
@@ -114,6 +116,28 @@ final class PreferencesModel: ObservableObject {
         if let hk = recorder.hotkey, hk != s.hotkey { s.hotkey = hk }
         if !layoutA.isEmpty && s.layoutA != layoutA { s.layoutA = layoutA }
         if !layoutB.isEmpty && s.layoutB != layoutB { s.layoutB = layoutB }
+        writeOptions(to: s)
+    }
+
+    /// "بعدين" / closing the first-run window: never blocks. Saves the parts that validate and silently
+    /// skips an invalid shortcut or language pair (the saved / automatic values stay in use).
+    func writeValidParts(to s: AppSettings) {
+        formError = nil
+        recorder.stop()
+        refreshLayouts()
+
+        if recorder.isValid, let hk = recorder.hotkey, !hk.isEmpty, hk != s.hotkey {
+            s.hotkey = hk
+        }
+        let pairOK = mode != .missing && !layoutA.isEmpty && !layoutB.isEmpty && layoutA != layoutB
+        if pairOK {
+            if s.layoutA != layoutA { s.layoutA = layoutA }
+            if s.layoutB != layoutB { s.layoutB = layoutB }
+        }
+        writeOptions(to: s)
+    }
+
+    private func writeOptions(to s: AppSettings) {
         if s.switchLayoutAfter != switchLayoutAfter { s.switchLayoutAfter = switchLayoutAfter }
         if s.selectLineIfEmpty != selectLineIfEmpty { s.selectLineIfEmpty = selectLineIfEmpty }
         if s.launchAtLogin != launchAtLogin { s.launchAtLogin = launchAtLogin }
@@ -122,6 +146,25 @@ final class PreferencesModel: ObservableObject {
     /// Call when the window goes away or loses focus.
     func stopRecording() {
         recorder.stop()
+    }
+
+    // MARK: Launch at login
+
+    /// The settings window shows the real login-item state, not just the stored preference.
+    func loadLoginItemState() {
+        launchAtLogin = LoginItem.isOn
+        loginItemHint = LoginItem.currentHint
+    }
+
+    /// Back from System Settings: drop the hint once macOS really starts us at login.
+    func refreshLoginItemHint() {
+        if loginItemHint != nil && LoginItem.isApproved {
+            loginItemHint = nil
+        }
+    }
+
+    func openLoginItemsSettings() {
+        LoginItem.openSystemSettings()
     }
 }
 
@@ -277,6 +320,14 @@ struct OptionsCard: View {
             ToggleRow(title: "يشتغل لما الماك يفتح",
                       subtitle: "يفتح لوحده أول ما الجهاز يشتغل",
                       isOn: $model.launchAtLogin)
+            if model.launchAtLogin, let hint = model.loginItemHint {
+                VStack(alignment: .leading, spacing: 8) {
+                    StatusText(line: StatusLine.error(hint))
+                    Button("افتح إعدادات النظام") { model.openLoginItemsSettings() }
+                }
+                .padding(.top, -4)
+                .padding(.bottom, 12)
+            }
             Divider()
             ToggleRow(title: "يغيّر لغة الكيبورد بعد التحويل",
                       subtitle: "عشان تكمّل كتابة باللغة الصح على طول",

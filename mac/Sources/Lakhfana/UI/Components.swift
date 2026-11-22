@@ -174,3 +174,28 @@ struct KeyCaps: View {
         .environment(\.layoutDirection, .leftToRight)
     }
 }
+
+/// The middle of a window (between header and footer). `height == nil`: laid out plainly, the window fits its
+/// content. Otherwise a vertical scroll area of exactly that height, so the footer buttons stay on screen.
+struct ScrollableMiddle<Content: View>: View {
+    let height: CGFloat?
+    let content: Content
+
+    init(height: CGFloat?, @ViewBuilder content: () -> Content) {
+        self.height = height
+        self.content = content()
+    }
+
+    var body: some View {
+        if let h = height {
+            ScrollView(.vertical, showsIndicators: true) {
+                content
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(height: h)
+        } else {
+            content
+        }
+    }
+}

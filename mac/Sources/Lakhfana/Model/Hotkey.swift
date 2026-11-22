@@ -51,6 +51,12 @@ struct Hotkey: Codable, Equatable {
         return modifierSymbols.joined() + Hotkey.keyName(keyCode)
     }
 
+    /// displayString wrapped in a left-to-right isolate (U+2066 … U+2069), so it keeps its order
+    /// ("⌃⇧Space", not "Space⇧⌃") when embedded in Arabic text: toasts, tooltip, menu.
+    var isolatedDisplayString: String {
+        return "\u{2066}" + displayString + "\u{2069}"
+    }
+
     static func keyName(_ keyCode: UInt32) -> String {
         switch Int(keyCode) {
         case kVK_Space: return "Space"

@@ -33,13 +33,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let hotkeyOK = registerHotkey()
         observeSettings()
+        // First launch registers the login item once (if wanted); later launches never re-add a removed one.
+        LoginItem.sync(wanted: settings.launchAtLogin)
 
         if !settings.firstRunDone {
             ob.show()
             return
         }
 
-        LoginItem.sync(wanted: settings.launchAtLogin)
         if !hotkeyOK {
             Toast.shared.show(hotkeyTakenMessage(settings.hotkey))
             showSettings()
@@ -75,12 +76,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showSettings()
     }
 
+    /// End of first run ("يلا نبدأ", "بعدين" or the close button). The onboarding window already saved the
+    /// settings and re-registered the hotkey.
     private func onboardingFinished(trusted: Bool) {
         LoginItem.setEnabled(settings.launchAtLogin)
         SwitchEngine.shared.reloadLayouts()
-        if trusted {
-            let hk = settings.hotkey
-            Toast.shared.show("جاهزين! حدد الكلام ودوس " + hk.displayString)
+        let hk = settings.hotkey
+        if !settings.paused && !HotkeyCenter.shared.isRegistered {
+            Toast.shared.show(hotkeyTakenMessage(hk))
+        } else if trusted {
+            Toast.shared.show("جاهزين! حدد الكلام ودوس " + hk.isolatedDisplayString)
         } else {
             Toast.shared.show("تمام. من غير صلاحية Accessibility مش هقدر أحوّل، فعّلها من الإعدادات وقت ما تحب.")
         }
@@ -113,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hotkeyTakenMessage(_ hk: Hotkey) -> String {
-        return "الاختصار " + hk.displayString + " مستخدم في برنامج تاني. اختار غيره من الإعدادات."
+        return "الاختصار " + hk.isolatedDisplayString + " مستخدم في برنامج تاني. اختار غيره من الإعدادات."
     }
 
     // MARK: Settings observation
@@ -141,19 +146,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
             .sink { _ in SwitchEngine.shared.reloadLayouts() }
             .store(in: &cancellables)
-
-        settings.$launchAtLogin
-            .dropFirst()
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { on in LoginItem.setEnabled(on) }
-            .store(in: &cancellables)
+        // launchAtLogin is applied by the windows that save it (every settings save, end of onboarding),
+        // so an unchanged value still re-applies and the window can show a hint when macOS refuses.
     }
 
     private func hotkeyChanged() {
         let hk = settings.hotkey
         menuBar?.update(paused: settings.paused, hotkey: hk)
         if settings.paused { return }
+        // A window that saved the change may have registered it already (HotkeyRefresh).
+        let center = HotkeyCenter.shared
+        if center.isRegistered, let current = center.current, current == hk { return }
         if !registerHotkey() {
             Toast.shared.show(hotkeyTakenMessage(hk))
         }
@@ -166,9 +169,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             HotkeyCenter.shared.unregister()
             Toast.shared.show("وقفنا مؤقتاً. دوس «تشغيل» من القائمة لما تحتاجنا.")
         } else if registerHotkey() {
-            Toast.shared.show("رجعنا تاني! " + hk.displayString)
+            Toast.shared.show("رجعنا تاني! " + hk.isolatedDisplayString)
         } else {
-            Toast.shared.show("رجعنا، بس الاختصار " + hk.displayString + " مستخدم في برنامج تاني. اختار غيره من الإعدادات.")
+            Toast.shared.show("رجعنا، بس الاختصار " + hk.isolatedDisplayString + " مستخدم في برنامج تاني. اختار غيره من الإعدادات.")
         }
     }
 }
