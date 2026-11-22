@@ -1,0 +1,104 @@
+name: mac
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build, test & package (macOS)
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Unit tests
+        working-directory: mac
+        run: |
+          if ! swift test 2>&1 | tee "$RUNNER_TEMP/swift-test.log"; then
+            echo "::error::swift test failed - re-running verbosely"
+            swift test -v 2>&1 | tail -n 400 || true
+            exit 1
+          fi
+
+      - name: Bundle .app and .dmg
+        run: |
+          export LAKHFANA_BUILD="$GITHUB_RUN_NUMBER"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            export LAKHFANA_VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          bash mac/scripts/bundle.sh
+
+      - name: Check the dmg contents
+        run: |
+          MNT="$(mktemp -d)"
+          hdiutil attach mac/dist/Lakhfana.dmg -nobrowse -readonly -mountpoint "$MNT"
+          ls -la "$MNT"
+          test -d "$MNT/Lakhfana.app"
+          test -L "$MNT/Applications"
+          codesign --verify --deep --strict "$MNT/Lakhfana.app"
+          hdiutil detach "$MNT" || hdiutil detach -force "$MNT"
+
+      - name: Smoke test (launch the app)
+        run: |
+          APP="mac/dist/Lakhfana.app"
+          open "$APP" || echo "::warning::open returned an error"
+          sleep 6
+          if pgrep -x Lakhfana >/dev/null; then
+            echo "Lakhfana is running (pid $(pgrep -x Lakhfana))"
+            pkill -x Lakhfana || true
+          else
+            echo "::error::Lakhfana is not running 6 s after launch"
+            for d in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
+              find "$d" -iname '*Lakhfana*' -print 2>/dev/null | while read -r f; do
+                echo "===== $f"
+                head -c 60000 "$f" || true
+                echo
+              done
+            done
+            echo "===== direct run (stdout/stderr, 5 s)"
+            "$APP/Contents/MacOS/Lakhfana" > "$RUNNER_TEMP/direct-run.log" 2>&1 &
+            pid=$!
+            sleep 5
+            kill "$pid" 2>/dev/null || true
+            cat "$RUNNER_TEMP/direct-run.log" || true
+            exit 1
+          fi
+
+      - name: Upload dmg
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lakhfana-dmg
+          path: mac/dist/Lakhfana.dmg
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Lakhfana-dmg
+          path: dist
+
+      - name: Attach dmg to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Lakhfana.dmg
+          fail_on_unmatched_files: true

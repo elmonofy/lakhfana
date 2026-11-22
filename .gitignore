@@ -1,0 +1,15 @@
+# Build output (Windows)
+dist/
+
+# Build output (macOS)
+mac/.build/
+mac/dist/
+mac/.swiftpm/
+
+# Editor / OS noise
+*.user
+.DS_Store
+
+# Keep the icons (sources of truth, committed on purpose)
+!assets/app.ico
+!mac/Resources/AppIcon-1024.png

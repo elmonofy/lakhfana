@@ -1,0 +1,4 @@
+/* Arabic localization of Info.plist keys (also makes AppKit treat the app as Arabic/RTL). */
+"CFBundleName" = "لخفنه";
+"CFBundleDisplayName" = "لخفنه";
+"NSHumanReadableCopyright" = "© 2026 لخفنه";
