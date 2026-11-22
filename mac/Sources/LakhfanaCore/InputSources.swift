@@ -77,6 +77,18 @@ public enum InputSources {
         return result
     }
 
+    /// Every installed keyboard layout with layout data, enabled or not (used by tests and diagnostics).
+    public static func allInstalledKeyboardLayouts() -> [InputSourceInfo] {
+        var seen = Set<String>()
+        var result: [InputSourceInfo] = []
+        for src in list(includeAllInstalled: true) {
+            guard hasLayoutData(src), let inf = info(src), !seen.contains(inf.id) else { continue }
+            seen.insert(inf.id)
+            result.append(inf)
+        }
+        return result
+    }
+
     /// Any installed layout by id, enabled or not (used by tests).
     public static func installed(id: String) -> InputSourceInfo? {
         let filter: [String: Any] = [kTISPropertyInputSourceID as String: id]

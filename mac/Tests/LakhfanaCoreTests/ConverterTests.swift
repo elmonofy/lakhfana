@@ -13,8 +13,20 @@ final class ConverterTests: XCTestCase {
         return (ar, en)
     }
 
+    /// The Windows-compatible "Arabic - PC" layout; its id differs between macOS versions.
+    private func pcLayoutID() throws -> String {
+        let candidates = ["com.apple.keylayout.ArabicPC", "com.apple.keylayout.Arabic-PC"]
+        for id in candidates where InputSources.installed(id: id) != nil { return id }
+        if let found = InputSources.allInstalledKeyboardLayouts().first(where: {
+            $0.id.lowercased().contains("arabic") && $0.id.lowercased().contains("pc")
+        }) {
+            return found.id
+        }
+        throw XCTSkip("no Arabic PC layout installed")
+    }
+
     private func pcConverter() throws -> Converter {
-        let (ar, en) = try layouts("com.apple.keylayout.Arabic-PC")
+        let (ar, en) = try layouts(try pcLayoutID())
         guard let c = Converter(a: ar, b: en) else {
             XCTFail("could not build converter")
             throw XCTSkip("no converter")
@@ -28,7 +40,9 @@ final class ConverterTests: XCTestCase {
 
     func testDumpLayouts() throws {
         // Diagnostic output for CI logs: what each layout types per key.
-        for id in ["com.apple.keylayout.US", "com.apple.keylayout.Arabic-PC", "com.apple.keylayout.Arabic"] {
+        let arabicIDs = InputSources.allInstalledKeyboardLayouts().map { $0.id }.filter { $0.lowercased().contains("arabic") }
+        print("installed arabic layouts: \(arabicIDs)")
+        for id in ["com.apple.keylayout.US"] + arabicIDs {
             guard let info = InputSources.installed(id: id), let map = LayoutMap(info) else {
                 print("layout \(id): not available")
                 continue
@@ -47,7 +61,7 @@ final class ConverterTests: XCTestCase {
         let c = try pcConverter()
         let r = c.convert("hgsghl ugd;l", fallbackSourceID: nil)
         XCTAssertEqual(r.text, "السلام عليكم")
-        XCTAssertEqual(r.targetID, "com.apple.keylayout.Arabic-PC")
+        XCTAssertEqual(r.targetID, try pcLayoutID())
         XCTAssertEqual(conv(c, "b"), "لا")
     }
 
@@ -78,7 +92,7 @@ final class ConverterTests: XCTestCase {
     }
 
     func testPairOrderDoesNotMatter() throws {
-        let (ar, en) = try layouts("com.apple.keylayout.Arabic-PC")
+        let (ar, en) = try layouts(try pcLayoutID())
         let c = Converter(a: en, b: ar)!
         XCTAssertEqual(c.convert("hgsghl ugd;l", fallbackSourceID: nil).text, "السلام عليكم")
     }
@@ -128,11 +142,23 @@ final class ConverterTests: XCTestCase {
     }
 
     func testRoundTripArabicPC() throws {
-        try roundTrip("com.apple.keylayout.Arabic-PC")
+        try roundTrip(try pcLayoutID())
     }
 
     func testRoundTripMacArabic() throws {
         try roundTrip("com.apple.keylayout.Arabic")
+    }
+
+    /// Mac's default "Arabic" layout (different key positions from Windows, no lam-alef key).
+    func testMacArabicLayout() throws {
+        let (ar, en) = try layouts("com.apple.keylayout.Arabic")
+        guard let c = Converter(a: ar, b: en) else { XCTFail("no converter"); return }
+        let r = c.convert("hgsghl ugd;l", fallbackSourceID: nil)
+        XCTAssertEqual(r.text, "السلام عليكم")
+        XCTAssertEqual(r.targetID, "com.apple.keylayout.Arabic")
+        XCTAssertEqual(c.convert("السلام عليكم", fallbackSourceID: nil).text, "hgsghl ugd;l")
+        XCTAssertEqual(c.convert("شزخعف", fallbackSourceID: nil).text, "about")
+        XCTAssertEqual(c.convert("about", fallbackSourceID: nil).text, "شزخعف")
     }
 
     func testEnglishScorerPrefersRealWords() {
@@ -143,7 +169,7 @@ final class ConverterTests: XCTestCase {
     }
 
     func testPickPair() throws {
-        let (ar, en) = try layouts("com.apple.keylayout.Arabic-PC")
+        let (ar, en) = try layouts(try pcLayoutID())
         let pair = InputSources.pickPair([en, ar], savedA: nil, savedB: nil)
         XCTAssertEqual(pair?.0.id, ar.id)
         XCTAssertEqual(pair?.1.id, en.id)
