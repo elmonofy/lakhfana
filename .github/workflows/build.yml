@@ -1,4 +1,4 @@
-name: mac
+name: build
 
 on:
   push:
@@ -84,9 +84,27 @@ jobs:
           path: mac/dist/Lakhfana.dmg
           if-no-files-found: error
 
+  windows:
+    name: Build & test (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run converter tests
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Test
+
+      - name: Upload exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lakhfana-exe
+          path: dist/Lakhfana.exe
+          if-no-files-found: error
+
   release:
     name: GitHub Release
-    needs: build
+    needs: [build, windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -97,8 +115,15 @@ jobs:
           name: Lakhfana-dmg
           path: dist
 
-      - name: Attach dmg to the release
+      - uses: actions/download-artifact@v4
+        with:
+          name: Lakhfana-exe
+          path: dist
+
+      - name: Attach dmg and exe to the release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Lakhfana.dmg
+          files: |
+            dist/Lakhfana.dmg
+            dist/Lakhfana.exe
           fail_on_unmatched_files: true

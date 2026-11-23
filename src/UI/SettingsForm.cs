@@ -90,11 +90,16 @@ namespace Lakhfana
             errorLabel.SetBounds(ex, y, Math.Max(Theme.S(40), un.Left - Theme.S(12) - ex), bh);
             root.Controls.Add(errorLabel);
 
-            footer = new Control[] { save, cancel, un, errorLabel };
+            LinkLabel credit = Credit.MakeLabel(Theme.Bg);
+            Size cs = credit.PreferredSize;
+            credit.Location = new Point((W - cs.Width) / 2, y + bh + Theme.S(16));
+            root.Controls.Add(credit);
+
+            footer = new Control[] { save, cancel, un, errorLabel, credit };
             prefsHeight = prefs.Height;
             prefs.SizeChanged += OnPrefsResized;
 
-            y += bh + Theme.S(20);
+            y = credit.Bottom + Theme.S(14);
             ClientSize = new Size(W, y);
             AcceptButton = save;
             CancelButton = cancel;

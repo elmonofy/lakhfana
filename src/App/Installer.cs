@@ -39,7 +39,7 @@ namespace Lakhfana
             get
             {
                 Version v = typeof(Installer).Assembly.GetName().Version;
-                if (v == null) return "1.0.0";
+                if (v == null) return "1.0.2";
                 return v.Major.ToString(CultureInfo.InvariantCulture) + "." +
                        v.Minor.ToString(CultureInfo.InvariantCulture) + "." +
                        Math.Max(0, v.Build).ToString(CultureInfo.InvariantCulture);
@@ -181,7 +181,9 @@ namespace Lakhfana
                 k.SetValue("DisplayName", DisplayName, RegistryValueKind.String);
                 k.SetValue("DisplayIcon", exe + ",0", RegistryValueKind.String);
                 k.SetValue("DisplayVersion", Version, RegistryValueKind.String);
-                k.SetValue("Publisher", DisplayName, RegistryValueKind.String);
+                k.SetValue("Publisher", Credit.Author, RegistryValueKind.String);
+                k.SetValue("URLInfoAbout", Credit.Url, RegistryValueKind.String);
+                k.SetValue("HelpLink", Credit.Url, RegistryValueKind.String);
                 k.SetValue("InstallLocation", InstallDir, RegistryValueKind.String);
                 k.SetValue("InstallDate", DateTime.Now.ToString("yyyyMMdd", CultureInfo.InvariantCulture), RegistryValueKind.String);
                 k.SetValue("UninstallString", "\"" + exe + "\" /uninstall", RegistryValueKind.String);

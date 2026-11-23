@@ -11,6 +11,7 @@ namespace Lakhfana
         readonly PreferencesPanel prefs;
         readonly Label footNote;
         readonly UiButton go;
+        readonly LinkLabel credit;
         readonly string noteText;
         int prefsHeight;
 
@@ -84,10 +85,15 @@ namespace Lakhfana
             footNote.SetBounds(Theme.RtlX(W, pad, nw), y, nw, go.Height);
             root.Controls.Add(footNote);
 
+            credit = Credit.MakeLabel(Theme.Bg);
+            Size cs = credit.PreferredSize;
+            credit.Location = new Point((W - cs.Width) / 2, y + go.Height + Theme.S(16));
+            root.Controls.Add(credit);
+
             prefsHeight = prefs.Height;
             prefs.SizeChanged += OnPrefsResized;
 
-            y += go.Height + Theme.S(20);
+            y = credit.Bottom + Theme.S(14);
             ClientSize = new Size(W, y);
             AcceptButton = go;
             ActiveControl = go;
@@ -128,6 +134,7 @@ namespace Lakhfana
             prefsHeight = prefs.Height;
             go.Top += delta;
             footNote.Top += delta;
+            credit.Top += delta;
             ClientSize = new Size(ClientSize.Width, ClientSize.Height + delta);
         }
 
