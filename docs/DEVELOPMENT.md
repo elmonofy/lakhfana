@@ -36,7 +36,12 @@ mac/scripts/bundle.sh          Universal build → .app (ad-hoc signed) → .dmg
 
 ## How a conversion works
 
-1. **Hotkey fires.** If Alt/Win (Windows) is held, a dummy key is tapped so releasing it doesn't open menus.
+1. **Hotkey fires.** A normal shortcut uses `RegisterHotKey`. A modifier-only shortcut on Windows (e.g. Ctrl + Shift,
+   two or more modifiers, no other key) uses low-level keyboard/mouse hooks (`src/App/ModifierChord.cs`): it fires
+   on release only if exactly that set was held, nothing else was pressed or clicked, and the chord lasted under
+   1.2 s; injected input is ignored. The combination Windows uses to switch input language (`HKCU\Keyboard Layout\Toggle`,
+   default Alt + Shift) is rejected.
+   Then: If Alt/Win (Windows) is held, a dummy key is tapped so releasing it doesn't open menus.
    A worker waits until the user releases all modifiers.
 2. **Guard checks.** Skip our own windows; refuse password fields (macOS checks the focused element via AX);
    on Windows refuse elevated targets (UIPI would drop our input) with a message.

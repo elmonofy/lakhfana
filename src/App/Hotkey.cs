@@ -19,9 +19,23 @@ namespace Lakhfana
             Vk = vk & 0xFF;
         }
 
+        /// <summary>No shortcut at all.</summary>
         public bool IsEmpty
         {
-            get { return Vk == 0; }
+            get { return Vk == 0 && !IsModifierOnly; }
+        }
+
+        /// <summary>A shortcut made of two or more modifier keys only, e.g. Ctrl + Shift (fires on release).</summary>
+        public bool IsModifierOnly
+        {
+            get { return Vk == 0 && BitCount(Modifiers) >= 2; }
+        }
+
+        public static int BitCount(int m)
+        {
+            int n = 0;
+            for (int i = 0; i < 4; i++) if ((m & (1 << i)) != 0) n++;
+            return n;
         }
 
         public static Hotkey Default
@@ -62,7 +76,8 @@ namespace Lakhfana
             if (!int.TryParse(parts[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out mods)) return default(Hotkey);
             if (!int.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out vk)) return default(Hotkey);
             if (mods < 0 || (mods & ~ModMask) != 0) return default(Hotkey);
-            if (vk <= 0 || vk > 0xFE) return default(Hotkey);
+            if (vk == 0) return BitCount(mods) >= 2 ? new Hotkey(mods, 0) : default(Hotkey);
+            if (vk < 0 || vk > 0xFE) return default(Hotkey);
             if (IsModifierVk(vk)) return default(Hotkey);
             return new Hotkey(mods, vk);
         }

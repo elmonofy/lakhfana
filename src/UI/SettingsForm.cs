@@ -559,7 +559,7 @@ namespace Lakhfana
         {
             Hotkey hk = HotkeyInput.Value;
             if (hk.IsEmpty) SetHotkeyStatus(UiStatus.Error, "اختار اختصار الأول");
-            else if (HotkeyBox.IsReserved(hk)) SetHotkeyStatus(UiStatus.Error, HotkeyBox.ReservedMessage);
+            else if (HotkeyBox.IsReserved(hk)) SetHotkeyStatus(UiStatus.Error, HotkeyBox.ReservedReason(hk));
             else if (!Available(hk)) SetHotkeyStatus(UiStatus.Error, "الاختصار ده مستخدم في برنامج تاني، جرّب غيره");
             else SetHotkeyStatus(UiStatus.Ok, "تمام، الاختصار ده فاضي");
         }

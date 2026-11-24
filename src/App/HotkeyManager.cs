@@ -19,7 +19,10 @@ namespace Lakhfana
         private static readonly List<HotkeyManager> live = new List<HotkeyManager>();
         private static readonly object liveLock = new object();
 
+        private const int WM_CHORD = 0x8000 + 0x4C;   // WM_APP-based: posted by the modifier-only chord hook
+
         private readonly MessageWindow window;
+        private readonly ModifierChord chord;
         private Hotkey current;
         private bool registered;
         private bool suspended;
@@ -31,6 +34,8 @@ namespace Lakhfana
         public HotkeyManager()
         {
             window = new MessageWindow(this);
+            // The hook callback runs on this (UI) thread; post so the hook returns immediately.
+            chord = new ModifierChord(delegate { HotkeyNative.PostMessage(window.Handle, WM_CHORD, IntPtr.Zero, IntPtr.Zero); });
             lock (liveLock) live.Add(this);
         }
 
@@ -102,6 +107,8 @@ namespace Lakhfana
         public static bool IsAvailable(Hotkey hk)
         {
             if (hk.IsEmpty || Hotkey.IsModifierVk(hk.Vk)) return false;
+            // Modifier-only chords use a hook, not RegisterHotKey: nothing else can "own" them.
+            if (hk.IsModifierOnly) return true;
             lock (liveLock)
             {
                 foreach (HotkeyManager m in live)
@@ -142,6 +149,11 @@ namespace Lakhfana
         {
             if (disposed || current.IsEmpty) return false;
             if (registered) return true;
+            if (current.IsModifierOnly)
+            {
+                registered = chord.Start(current.Modifiers);
+                return registered;
+            }
             registered = HotkeyNative.RegisterHotKey(window.Handle, HotkeyId, current.Modifiers | MOD_NOREPEAT, current.Vk);
             return registered;
         }
@@ -149,7 +161,11 @@ namespace Lakhfana
         private void UnregisterNative()
         {
             if (!registered) return;
-            try { HotkeyNative.UnregisterHotKey(window.Handle, HotkeyId); }
+            try
+            {
+                if (chord.IsActive) chord.Stop();
+                else HotkeyNative.UnregisterHotKey(window.Handle, HotkeyId);
+            }
             catch (Exception) { }
             registered = false;
         }
@@ -181,7 +197,7 @@ namespace Lakhfana
 
             protected override void WndProc(ref Message m)
             {
-                if (m.Msg == WM_HOTKEY && m.WParam.ToInt64() == HotkeyId)
+                if ((m.Msg == WM_HOTKEY && m.WParam.ToInt64() == HotkeyId) || m.Msg == WM_CHORD)
                 {
                     owner.OnHotkey();
                     return;
@@ -199,6 +215,10 @@ namespace Lakhfana
             [DllImport("user32.dll", SetLastError = true)]
             [return: MarshalAs(UnmanagedType.Bool)]
             public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+            [DllImport("user32.dll")]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            public static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
         }
     }
 }

@@ -16,10 +16,18 @@ namespace Lakhfana
         const int WM_SETFOCUS = 0x7, WM_KEYDOWN = 0x100, WM_SYSKEYDOWN = 0x104, WM_SYSKEYUP = 0x105, WM_SYSCHAR = 0x106;
 
         internal const string ReservedMessage = "ده اختصار مهم في الويندوز، اختار غيره";
+        internal const string LanguageSwitchMessage = "ده اختصار تغيير اللغة في الويندوز، اختار غيره";
+
+        internal static string ReservedReason(Hotkey hk)
+        {
+            return hk.IsModifierOnly ? LanguageSwitchMessage : ReservedMessage;
+        }
 
         Hotkey value;
         bool recording, hover, swallowSysKeys, keyboardHint;
         int liveMods;
+        int peakMods;            // modifiers held together since the last full release (for Ctrl + Shift style shortcuts)
+        bool keyInChord;         // a non-modifier key was pressed during that chord
         IntPtr focusFrom;
         string flash;
         DateTime flashUntil;
@@ -90,6 +98,8 @@ namespace Lakhfana
             SetKeyboardHint(false);
             recording = true;
             liveMods = 0;
+            peakMods = 0;
+            keyInChord = false;
             flash = null;
             timer.Start();
             Invalidate();
@@ -127,6 +137,25 @@ namespace Lakhfana
             int mods = PhysicalMods();
             if (recording)
             {
+                peakMods |= mods;
+                if (mods == 0 && peakMods != 0)
+                {
+                    int chord = peakMods;
+                    bool hadKey = keyInChord;
+                    peakMods = 0;
+                    keyInChord = false;
+                    if (!hadKey)
+                    {
+                        if (Hotkey.BitCount(chord) >= 2)
+                        {
+                            Hotkey hk = new Hotkey(chord, 0);
+                            if (IsReserved(hk)) Reject(ReservedReason(hk));
+                            else Accept(hk);
+                            return;
+                        }
+                        Reject("زرار واحد مش كفاية، دوس زرارين مع بعض");
+                    }
+                }
                 if (mods != liveMods) { liveMods = mods; Invalidate(); }
                 if (flash != null && DateTime.UtcNow > flashUntil) { flash = null; Invalidate(); }
             }
@@ -174,6 +203,7 @@ namespace Lakhfana
         internal static bool IsReserved(Hotkey hk)
         {
             if (hk.IsEmpty) return false;
+            if (hk.IsModifierOnly) return InputSwitchHotkeys.Conflicts(hk);
             int m = hk.Modifiers;
             Keys k = (Keys)hk.Vk;
             const int C = Hotkey.MOD_CONTROL, A = Hotkey.MOD_ALT, S = Hotkey.MOD_SHIFT;
@@ -208,13 +238,15 @@ namespace Lakhfana
             if (key == Keys.None || IsModifierKey(key) || key == Keys.ProcessKey || key == Keys.Packet || (int)key == 0xFF)
             {
                 liveMods = mods;
+                peakMods |= mods;
                 Invalidate();
                 return;
             }
+            keyInChord = true;
             if (key == Keys.Escape && mods == 0) { EndRecording(); return; }
             if (key == Keys.Back && mods == 0) { Accept(default(Hotkey)); return; }
             Hotkey hk = new Hotkey(mods, (int)key);
-            if (IsReserved(hk)) { Reject(ReservedMessage); return; }
+            if (IsReserved(hk)) { Reject(ReservedReason(hk)); return; }
             if (!AllowedAlone(key) && (mods & (Hotkey.MOD_CONTROL | Hotkey.MOD_ALT | Hotkey.MOD_WIN)) == 0)
             {
                 Reject(mods == Hotkey.MOD_SHIFT ? "Shift لوحده مش كفاية، زوّد Ctrl أو Alt" : "لازم معاه Ctrl أو Alt");
@@ -359,7 +391,7 @@ namespace Lakhfana
             else
             {
                 List<string> parts = new List<string>(ModNames(value.Modifiers));
-                parts.Add(ShortKeyName(value.Vk));
+                if (value.Vk != 0) parts.Add(ShortKeyName(value.Vk));
                 DrawKeys(g, parts.ToArray(), false);
             }
         }
