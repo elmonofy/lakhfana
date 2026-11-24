@@ -39,7 +39,7 @@ namespace Lakhfana
             get
             {
                 Version v = typeof(Installer).Assembly.GetName().Version;
-                if (v == null) return "1.0.2";
+                if (v == null) return "1.0.3";
                 return v.Major.ToString(CultureInfo.InvariantCulture) + "." +
                        v.Minor.ToString(CultureInfo.InvariantCulture) + "." +
                        Math.Max(0, v.Build).ToString(CultureInfo.InvariantCulture);

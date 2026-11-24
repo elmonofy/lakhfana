@@ -21,6 +21,7 @@ struct OnboardingView: View {
                 }
             }
             footer
+            CreditLine()
         }
         .padding(Theme.windowPadding)
         .frame(width: Theme.windowWidth)
