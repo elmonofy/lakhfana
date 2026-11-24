@@ -20,6 +20,10 @@ final class HotkeyRecorderModel: ObservableObject {
     private var monitor: Any?
     private var suspended = false
     private var rejection: String?
+    /// Modifiers held together since the last full release, and whether a real key was pressed meanwhile
+    /// (for modifier-only shortcuts such as ⌃⇧).
+    private var chordPeak: NSEvent.ModifierFlags = []
+    private var chordHadKey = false
 
     init(hotkey: Hotkey?) {
         if let hk = hotkey, !hk.isEmpty {
@@ -41,6 +45,8 @@ final class HotkeyRecorderModel: ObservableObject {
         guard !isRecording else { return }
         rejection = nil
         liveFlags = []
+        chordPeak = []
+        chordHadKey = false
         isRecording = true
         if !suspended {
             suspended = true
@@ -105,10 +111,23 @@ final class HotkeyRecorderModel: ObservableObject {
         let mods = event.modifierFlags.intersection([.control, .option, .shift, .command])
 
         if event.type == .flagsChanged {
+            if liveFlags.isEmpty && !mods.isEmpty {
+                chordPeak = []
+                chordHadKey = false
+            }
+            chordPeak.formUnion(mods)
             if liveFlags != mods { liveFlags = mods }
+            if mods.isEmpty && !chordPeak.isEmpty {
+                let chord = chordPeak
+                let hadKey = chordHadKey
+                chordPeak = []
+                chordHadKey = false
+                if !hadKey { acceptModifierChord(chord) }
+            }
             return false
         }
         guard event.type == .keyDown else { return false }
+        chordHadKey = true
         if event.isARepeat { return true }
 
         let code = Int(event.keyCode)
@@ -144,6 +163,17 @@ final class HotkeyRecorderModel: ObservableObject {
         return true
     }
 
+    /// All modifiers released without another key: two or more of them make a modifier-only shortcut.
+    private func acceptModifierChord(_ flags: NSEvent.ModifierFlags) {
+        let carbon = Hotkey(keyCode: 0, cocoaFlags: flags).modifiers
+        if Hotkey.modifierCount(carbon) < 2 {
+            reject("زرار واحد مش كفاية، دوس زرارين مع بعض")
+            return
+        }
+        hotkey = Hotkey.modifierOnly(carbon)
+        stop()
+    }
+
     private func reject(_ message: String) {
         rejection = message
         NSSound.beep()
@@ -153,6 +183,7 @@ final class HotkeyRecorderModel: ObservableObject {
     // MARK: Caps
 
     static func caps(for hk: Hotkey) -> [String] {
+        if hk.isModifierOnly { return hk.modifierSymbols }
         return hk.modifierSymbols + [Hotkey.keyName(hk.keyCode)]
     }
 

@@ -10,11 +10,12 @@ final class HotkeyCenter {
     private var ref: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private var suspended = false
+    private var chord: ModifierChordMonitor?
 
     private static let signature: OSType = 0x4C4B4846   // 'LKHF'
     private static let hotkeyID: UInt32 = 1
 
-    var isRegistered: Bool { return ref != nil }
+    var isRegistered: Bool { return ref != nil || chord != nil }
 
     private init() {
         installHandler()
@@ -52,6 +53,10 @@ final class HotkeyCenter {
         current = hk
         suspended = false
         if hk.isEmpty { return false }
+        if hk.isModifierOnly {
+            startChord(hk)
+            return true
+        }
         ref = HotkeyCenter.registerRaw(hk)
         return ref != nil
     }
@@ -67,6 +72,19 @@ final class HotkeyCenter {
             UnregisterEventHotKey(r)
             ref = nil
         }
+        if let c = chord {
+            c.stop()
+            chord = nil
+        }
+    }
+
+    /// Modifier-only shortcuts (⌃⇧…) are watched with event monitors instead of a Carbon hotkey.
+    private func startChord(_ hk: Hotkey) {
+        let monitor = ModifierChordMonitor(target: hk.cocoaFlags) {
+            HotkeyCenter.shared.onPressed?()
+        }
+        monitor.start()
+        chord = monitor
     }
 
     /// Temporarily releases the hotkey (while the user records a new one).
@@ -80,13 +98,14 @@ final class HotkeyCenter {
         guard suspended else { return }
         suspended = false
         if let hk = current, !hk.isEmpty, !AppSettings.shared.paused {
-            ref = HotkeyCenter.registerRaw(hk)
+            if hk.isModifierOnly { startChord(hk) } else { ref = HotkeyCenter.registerRaw(hk) }
         }
     }
 
     /// True if `hk` can be registered (or is the one we currently hold).
     static func isAvailable(_ hk: Hotkey) -> Bool {
         if hk.isEmpty { return false }
+        if hk.isModifierOnly { return true }   // nothing else can own a modifier-only chord
         let me = HotkeyCenter.shared
         if me.isRegistered, let cur = me.current, cur == hk { return true }
         if let r = registerRaw(hk) {
@@ -99,6 +118,7 @@ final class HotkeyCenter {
     /// Shortcuts people rely on everywhere; never allowed as the global hotkey.
     static func isReserved(_ hk: Hotkey) -> Bool {
         if hk.isEmpty { return true }
+        if hk.isModifierOnly { return false }
         let k = Int(hk.keyCode)
         let cmd = UInt32(cmdKey), shift = UInt32(shiftKey), opt = UInt32(optionKey), ctrl = UInt32(controlKey)
         let m = hk.modifiers

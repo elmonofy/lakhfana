@@ -28,6 +28,34 @@ struct Hotkey: Codable, Equatable {
 
     var isEmpty: Bool { return keyCode == UInt32.max }
 
+    /// Key code used for shortcuts made of modifier keys only (e.g. ⌃⇧): they fire when the keys are released.
+    static let modifierOnlyKeyCode: UInt32 = UInt32.max - 1
+
+    /// Two or more modifiers and no other key.
+    var isModifierOnly: Bool {
+        return keyCode == Hotkey.modifierOnlyKeyCode && Hotkey.modifierCount(modifiers) >= 2
+    }
+
+    static func modifierOnly(_ carbonModifiers: UInt32) -> Hotkey {
+        return Hotkey(keyCode: modifierOnlyKeyCode, modifiers: carbonModifiers)
+    }
+
+    static func modifierCount(_ m: UInt32) -> Int {
+        var n = 0
+        for bit in [cmdKey, shiftKey, optionKey, controlKey] where m & UInt32(bit) != 0 { n += 1 }
+        return n
+    }
+
+    /// The same modifiers as Cocoa flags.
+    var cocoaFlags: NSEvent.ModifierFlags {
+        var f: NSEvent.ModifierFlags = []
+        if hasCommand { f.insert(.command) }
+        if hasShift { f.insert(.shift) }
+        if hasOption { f.insert(.option) }
+        if hasControl { f.insert(.control) }
+        return f
+    }
+
     static let empty = Hotkey(keyCode: UInt32.max, modifiers: 0)
 
     var hasCommand: Bool { return modifiers & UInt32(cmdKey) != 0 }
@@ -48,6 +76,7 @@ struct Hotkey: Codable, Equatable {
     /// "⌃⇧Space", "⌘⇧K", "F13"
     var displayString: String {
         if isEmpty { return "" }
+        if isModifierOnly { return modifierSymbols.joined() }
         return modifierSymbols.joined() + Hotkey.keyName(keyCode)
     }
 

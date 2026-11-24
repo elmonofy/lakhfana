@@ -40,7 +40,8 @@ mac/scripts/bundle.sh          Universal build → .app (ad-hoc signed) → .dmg
    two or more modifiers, no other key) uses low-level keyboard/mouse hooks (`src/App/ModifierChord.cs`): it fires
    on release only if exactly that set was held, nothing else was pressed or clicked, and the chord lasted under
    1.2 s; injected input is ignored. The combination Windows uses to switch input language (`HKCU\Keyboard Layout\Toggle`,
-   default Alt + Shift) is rejected.
+   default Alt + Shift) is rejected. On macOS the same chord rule is implemented with NSEvent global/local
+   monitors (`mac/Sources/Lakhfana/Engine/ModifierChordMonitor.swift`), re-installed once Accessibility is granted.
    Then: If Alt/Win (Windows) is held, a dummy key is tapped so releasing it doesn't open menus.
    A worker waits until the user releases all modifiers.
 2. **Guard checks.** Skip our own windows; refuse password fields (macOS checks the focused element via AX);
