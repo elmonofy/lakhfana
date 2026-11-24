@@ -50,7 +50,8 @@ final class ModifierChordMonitor {
         removeMonitors()
         reset()
         installedWhileTrusted = Permissions.isTrusted
-        let mask: NSEvent.EventTypeMask = [.flagsChanged, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]
+        let mask: NSEvent.EventTypeMask = [.flagsChanged, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown,
+                                           .scrollWheel, .systemDefined, .magnify, .swipe, .rotate, .gesture]
         if let g = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] event in
             self?.handle(event)
         }) {
@@ -76,6 +77,17 @@ final class ModifierChordMonitor {
         tainted = false
     }
 
+    /// True when a key, media key, click or scroll physically happened within the last `seconds` seconds
+    /// (hardware-level: includes events the system or other apps swallowed).
+    static func otherInputSince(_ seconds: TimeInterval) -> Bool {
+        var types: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]
+        if let systemDefined = CGEventType(rawValue: 14) { types.append(systemDefined) }   // NX_SYSDEFINED: media keys
+        for t in types {
+            if CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: t) < seconds { return true }
+        }
+        return false
+    }
+
     private func handle(_ event: NSEvent) {
         if event.type != .flagsChanged {
             if !held.isEmpty { tainted = true }   // a real key / click inside the chord: a normal shortcut
@@ -91,7 +103,11 @@ final class ModifierChordMonitor {
         peak.formUnion(mods)
         guard mods.isEmpty, !peak.isEmpty else { return }
 
-        let hit = !tainted && peak == target && Date().timeIntervalSince(startedAt) <= ModifierChordMonitor.maxChord
+        let elapsed = Date().timeIntervalSince(startedAt)
+        // Keys taken by macOS or another app (⌘⇧4, ⌘⇧Tab, Raycast…) never reach our monitors, and nothing does
+        // without Accessibility or under Secure Input: ask the HID layer whether anything else was pressed.
+        let hit = !tainted && peak == target && elapsed <= ModifierChordMonitor.maxChord
+            && Permissions.isTrusted && !ModifierChordMonitor.otherInputSince(elapsed)
         peak = []
         tainted = false
         if hit {

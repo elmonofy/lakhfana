@@ -24,6 +24,7 @@ final class HotkeyRecorderModel: ObservableObject {
     /// (for modifier-only shortcuts such as ⌃⇧).
     private var chordPeak: NSEvent.ModifierFlags = []
     private var chordHadKey = false
+    private var chordStartedAt = Date()
 
     init(hotkey: Hotkey?) {
         if let hk = hotkey, !hk.isEmpty {
@@ -114,6 +115,7 @@ final class HotkeyRecorderModel: ObservableObject {
             if liveFlags.isEmpty && !mods.isEmpty {
                 chordPeak = []
                 chordHadKey = false
+                chordStartedAt = Date()
             }
             chordPeak.formUnion(mods)
             if liveFlags != mods { liveFlags = mods }
@@ -122,7 +124,15 @@ final class HotkeyRecorderModel: ObservableObject {
                 let hadKey = chordHadKey
                 chordPeak = []
                 chordHadKey = false
-                if !hadKey { acceptModifierChord(chord) }
+                if !hadKey {
+                    // A key the system or another app swallowed (⌘⇧4, ⌘Space…) never reaches us: don't record
+                    // just its modifiers.
+                    if ModifierChordMonitor.otherInputSince(Date().timeIntervalSince(chordStartedAt)) {
+                        reject(HotkeyRecorderModel.takenMessage)
+                    } else {
+                        acceptModifierChord(chord)
+                    }
+                }
             }
             return false
         }
